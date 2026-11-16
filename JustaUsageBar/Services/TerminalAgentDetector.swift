@@ -51,6 +51,8 @@ nonisolated enum TerminalAgentDetector {
             case "grok": return .cursor
             case "dsh", "deepseek", "deepseek-tui": return .deepseek
             case "qwen", "qwen-code": return .qwen
+            case "opencode": return .opencode
+            case "cmd", "commandcode", "command-code": return .commandcode
             default: break
             }
             // Versioned installs and package entry points do not carry the tool's name.

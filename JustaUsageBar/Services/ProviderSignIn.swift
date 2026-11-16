@@ -42,6 +42,12 @@ nonisolated enum ProviderSignIn: Equatable {
             return .apiKey(page: URL(string: "https://platform.deepseek.com/api_keys")!)
         case .qwen:
             return .qwenWebsite
+        case .opencode:
+            return login("opencode", arguments: ["auth", "login", "opencode-go"])
+                ?? .download(title: "Get OpenCode", url: URL(string: "https://opencode.ai")!)
+        case .commandcode:
+            return login("cmd", arguments: ["login"], alsoIn: [".commandcode/bin"])
+                ?? .apiKey(page: URL(string: "https://commandcode.ai/studio")!)
         }
     }
 

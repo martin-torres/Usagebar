@@ -49,6 +49,16 @@ final class UsageViewModel: ObservableObject {
     @Published var qwenUsageData: QwenUsageData = .placeholder
     @Published var qwenError: String?
 
+    // MARK: - OpenCode Published Properties
+
+    @Published var opencodeUsageData: OpenCodeUsageData = .placeholder
+    @Published var opencodeError: String?
+
+    // MARK: - Command Code Published Properties
+
+    @Published var commandCodeUsageData: CommandCodeUsageData = .placeholder
+    @Published var commandCodeError: String?
+
     // MARK: - General
 
     @Published var isLoading: Bool = false
@@ -68,6 +78,8 @@ final class UsageViewModel: ObservableObject {
     @AppStorage("showKimi") var showKimi: Bool = true
     @AppStorage("showDeepSeek") var showDeepSeek: Bool = true
     @AppStorage("showQwen") var showQwen: Bool = true
+    @AppStorage("showOpenCode") var showOpenCode: Bool = true
+    @AppStorage("showCommandCode") var showCommandCode: Bool = true
     @AppStorage("animationInterval") var animationInterval: Double = 8.0
     @AppStorage("followActiveApp") var followActiveApp: Bool = true
     @AppStorage("autoUpdate") var autoUpdate: Bool = true
@@ -160,6 +172,8 @@ final class UsageViewModel: ObservableObject {
             case .zai: return showZai
             case .deepseek: return showDeepSeek
             case .qwen: return showQwen
+            case .opencode: return showOpenCode
+            case .commandcode: return showCommandCode
             }
         })
     }
@@ -179,6 +193,8 @@ final class UsageViewModel: ObservableObject {
     var hasKimiCredentials: Bool { availableProviders.contains(.kimi) }
     var hasDeepSeekCredentials: Bool { availableProviders.contains(.deepseek) }
     var hasQwenCredentials: Bool { availableProviders.contains(.qwen) }
+    var hasOpenCodeCredentials: Bool { availableProviders.contains(.opencode) }
+    var hasCommandCodeCredentials: Bool { availableProviders.contains(.commandcode) }
 
     var shouldAnimateProviders: Bool {
         !isBackgroundSuspended && !lowPowerMode &&
@@ -272,6 +288,8 @@ final class UsageViewModel: ObservableObject {
             await CursorAPIService.shared.clearCache()
             await ZaiAPIService.shared.clearCache()
             await KimiAPIService.shared.clearCache()
+            await OpenCodeAPIService.shared.clearCache()
+            await CommandCodeAPIService.shared.clearCache()
         }
         async let claude = ClaudeOAuthService.shared.hasCredentials
         async let web = CredentialStorage.shared.hasCredentials
@@ -281,9 +299,13 @@ final class UsageViewModel: ObservableObject {
         async let kimi = KimiAPIService.shared.detectedAuthSource
         async let deepseek = DeepSeekAPIService.shared.hasCredentials
         async let qwen = QwenAPIService.shared.hasCredentials
+        async let opencode = OpenCodeAPIService.shared.hasCredentials
+        async let commandCode = CommandCodeAPIService.shared.hasCredentials
         let (hasClaude, hasWeb, hasCodex, hasCursor, hasZai, kimiSource, hasDeepSeek) =
             await (claude, web, codex, cursor, zai, kimi, deepseek)
         let hasQwen = await qwen
+        let hasOpenCode = await opencode
+        let hasCommandCode = await commandCode
         guard !Task.isCancelled else { return }
         var available: Set<DisplayProvider> = []
         if hasClaude || hasWeb { available.insert(.claude) }
@@ -293,6 +315,8 @@ final class UsageViewModel: ObservableObject {
         if kimiSource != .none { available.insert(.kimi) }
         if hasDeepSeek { available.insert(.deepseek) }
         if hasQwen { available.insert(.qwen) }
+        if hasOpenCode { available.insert(.opencode) }
+        if hasCommandCode { available.insert(.commandcode) }
         available.subtract(disconnectedProviders)
         if available != availableProviders { availableProviders = available }
         claudeAuthSource = hasClaude ? .oauth : (hasWeb ? .webSession : .none)
@@ -318,6 +342,8 @@ final class UsageViewModel: ObservableObject {
             case .cursor: await CursorAPIService.shared.clearCache()
             case .kimi: await KimiAPIService.shared.clearCache()
             case .zai: await ZaiAPIService.shared.clearCache()
+            case .opencode: await OpenCodeAPIService.shared.clearCache()
+            case .commandcode: await CommandCodeAPIService.shared.clearCache()
             case .deepseek, .qwen: break // Read their stored credentials every time.
             }
         }
@@ -388,6 +414,14 @@ final class UsageViewModel: ObservableObject {
                 let data = try await QwenAPIService.shared.fetchUsage()
                 try Task.checkCancellation()
                 qwenUsageData = data
+            case .opencode:
+                let data = try await OpenCodeAPIService.shared.fetchUsage()
+                try Task.checkCancellation()
+                opencodeUsageData = data
+            case .commandcode:
+                let data = try await CommandCodeAPIService.shared.fetchUsage()
+                try Task.checkCancellation()
+                commandCodeUsageData = data
             }
             setError(nil, for: provider)
             refreshStates[provider, default: .init()].succeeded(at: Date())
@@ -425,6 +459,8 @@ final class UsageViewModel: ObservableObject {
         case .kimi: kimiError = message
         case .deepseek: deepseekError = message
         case .qwen: qwenError = message
+        case .opencode: opencodeError = message
+        case .commandcode: commandCodeError = message
         }
     }
 
@@ -638,6 +674,30 @@ final class UsageViewModel: ObservableObject {
         })
     }
 
+    /// A new key starts clean, so it neither shows the old account's reading nor
+    /// waits out the old key's cooldown.
+    func saveCommandCodeAPIKey(_ key: String) {
+        disconnectedProviders.remove(.commandcode)
+        changeCredentials({
+            CredentialStorage.shared.setCommandCodeAPIKey(key.trimmingCharacters(in: .whitespacesAndNewlines))
+        }, reset: {
+            self.commandCodeUsageData = .placeholder
+            self.commandCodeError = nil
+            self.refreshStates[.commandcode] = nil
+        })
+    }
+
+    func clearCommandCodeAPIKey() {
+        changeCredentials({
+            CredentialStorage.shared.clearCommandCodeAPIKey()
+            CommandCodeAPIService.shared.clearCache()
+        }, reset: {
+            self.commandCodeUsageData = .placeholder
+            self.commandCodeError = nil
+            self.refreshStates[.commandcode] = nil
+        })
+    }
+
     var disconnectedProviders: Set<DisplayProvider> {
         get { Set(disconnectedProvidersValue.split(separator: ",").compactMap { DisplayProvider(rawValue: String($0)) }) }
         set { disconnectedProvidersValue = newValue.map(\.rawValue).sorted().joined(separator: ",") }
@@ -653,6 +713,14 @@ final class UsageViewModel: ObservableObject {
         case .zai: clearZaiAPIKey()
         case .deepseek: clearDeepSeekAPIKey()
         case .qwen: signOutQwen()
+        case .commandcode: clearCommandCodeAPIKey()
+        case .opencode:
+            // Nothing Usagebar saved: OpenCode's own sign-ins stay where they are.
+            changeCredentials({ OpenCodeAPIService.shared.clearCache() }, reset: {
+                self.opencodeUsageData = .placeholder
+                self.opencodeError = nil
+                self.refreshStates[.opencode] = nil
+            })
         case .cursor:
             changeCredentials({ CursorAPIService.shared.clearCache() }, reset: {
                 self.cursorUsageData = .placeholder

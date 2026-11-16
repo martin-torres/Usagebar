@@ -202,6 +202,8 @@ private struct SetupRow: View {
         case .zai: "z.ai"
         case .deepseek: "DeepSeek"
         case .qwen: "Qwen"
+        case .opencode: "OpenCode"
+        case .commandcode: "Command Code"
         }
     }
 
@@ -217,6 +219,8 @@ private struct SetupRow: View {
         case .zai: "z.ai coding plan"
         case .deepseek: "DeepSeek Harness or API key"
         case .qwen: "QwenCloud Token Plan"
+        case .opencode: "OpenCode Go subscription"
+        case .commandcode: "Command Code CLI or API key"
         }
     }
 

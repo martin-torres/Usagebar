@@ -452,8 +452,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let hasKimi = viewModel.hasKimiCredentials
         let hasDeepSeek = viewModel.hasDeepSeekCredentials
         let hasQwen = viewModel.hasQwenCredentials
+        let hasOpenCode = viewModel.hasOpenCodeCredentials
+        let hasCommandCode = viewModel.hasCommandCodeCredentials
 
-        if !hasClaude && !hasCodex && !hasCursor && !hasZai && !hasKimi && !hasDeepSeek && !hasQwen {
+        if !hasClaude && !hasCodex && !hasCursor && !hasZai && !hasKimi && !hasDeepSeek && !hasQwen && !hasOpenCode && !hasCommandCode {
             let setupItem = NSMenuItem(title: "Set Up Usagebar…", action: #selector(showSetupWindow), keyEquivalent: "")
             setupItem.target = self
             menu.addItem(setupItem)
@@ -473,6 +475,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 case .zai: "z.ai"
                 case .deepseek: "DeepSeek"
                 case .qwen: "Qwen"
+                case .opencode: "OpenCode"
+                case .commandcode: "Command Code"
                 }
                 let item = NSMenuItem(title: "\(title): \(viewModel.freshnessText(for: provider))", action: nil, keyEquivalent: "")
                 item.isEnabled = false
@@ -501,7 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             displayMenu.addItem(onlyWeeklyItem)
 
             // Provider toggles
-            let authedProviderCount = [hasClaude, hasCodex, hasCursor, hasKimi, hasZai, hasDeepSeek, hasQwen].filter { $0 }.count
+            let authedProviderCount = [hasClaude, hasCodex, hasCursor, hasKimi, hasZai, hasDeepSeek, hasQwen, hasOpenCode, hasCommandCode].filter { $0 }.count
             if authedProviderCount > 0 {
                 displayMenu.addItem(NSMenuItem.separator())
 
@@ -552,6 +556,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     qwenToggle.target = self
                     qwenToggle.state = viewModel.showQwen ? .on : .off
                     displayMenu.addItem(qwenToggle)
+                }
+
+                if hasOpenCode {
+                    let opencodeToggle = NSMenuItem(title: "Show OpenCode", action: #selector(toggleShowOpenCode), keyEquivalent: "")
+                    opencodeToggle.target = self
+                    opencodeToggle.state = viewModel.showOpenCode ? .on : .off
+                    displayMenu.addItem(opencodeToggle)
+                }
+
+                if hasCommandCode {
+                    let commandCodeToggle = NSMenuItem(title: "Show Command Code", action: #selector(toggleShowCommandCode), keyEquivalent: "")
+                    commandCodeToggle.target = self
+                    commandCodeToggle.state = viewModel.showCommandCode ? .on : .off
+                    displayMenu.addItem(commandCodeToggle)
                 }
 
                 // Follow-active-app + switch-interval apply once 2+ providers show.
@@ -830,6 +848,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             ))
         }
 
+        if viewModel.hasOpenCodeCredentials && viewModel.showOpenCode {
+            let opencode = viewModel.opencodeUsageData
+            var rows: [UsagePanelRow] = []
+            rows.append(UsagePanelRow(label: "5h", percent: Int(opencode.rollingUsedPercent.rounded()), resetText: opencode.timeUntilRollingReset))
+            rows.append(UsagePanelRow(label: "7d", percent: Int(opencode.weeklyUsedPercent.rounded()), resetText: opencode.timeUntilWeeklyReset))
+            if opencode.hasMonthly {
+                rows.append(UsagePanelRow(label: "30d", percent: Int(opencode.monthlyUsedPercent.rounded()), resetText: opencode.timeUntilMonthlyReset))
+            }
+            let error = viewModel.opencodeError
+            cards.append(UsagePanelCard(
+                provider: .opencode, detail: "Go", rows: rows,
+                message: error, actionTitle: error != nil ? "OpenCode Setup…" : nil
+            ))
+        }
+
+        if viewModel.hasCommandCodeCredentials && viewModel.showCommandCode {
+            let commandCode = viewModel.commandCodeUsageData
+            var rows: [UsagePanelRow] = []
+            if commandCode.hasFiveHour {
+                rows.append(UsagePanelRow(label: "5h", percent: Int(commandCode.fiveHourUsedPercent.rounded()), resetText: commandCode.timeUntilFiveHourReset))
+            }
+            if commandCode.hasWeekly {
+                rows.append(UsagePanelRow(label: "7d", percent: Int(commandCode.weeklyUsedPercent.rounded()), resetText: commandCode.timeUntilWeeklyReset))
+            }
+            if rows.isEmpty {
+                rows.append(UsagePanelRow(label: "7d", percent: 0, resetText: "--"))
+            }
+            let error = viewModel.commandCodeError
+            let credits = commandCode.creditsRemaining.map { String(format: "Credits %.2f", $0) }
+            cards.append(UsagePanelCard(
+                provider: .commandcode, detail: credits ?? "", rows: rows,
+                message: error, actionTitle: error != nil ? "Command Code Setup…" : nil
+            ))
+        }
+
         return cards
     }
 
@@ -861,6 +914,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             case .qwen:
                 self.showSetupWindow()
                 self.setupModel.isSigningInToQwen = true
+            case .opencode, .commandcode:
+                self.showSetupWindow()
             case .cursor: break
             }
         }
@@ -930,6 +985,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             setupModel.onSaveKey = { [weak self] provider, key in
                 if provider == .zai {
                     self?.viewModel.saveZaiAPIKey(key)
+                } else if provider == .commandcode {
+                    self?.viewModel.saveCommandCodeAPIKey(key)
                 } else {
                     self?.viewModel.saveDeepSeekAPIKey(key)
                 }
@@ -1000,7 +1057,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func startSignIn(_ provider: DisplayProvider, _ signIn: ProviderSignIn) {
         switch signIn {
         case .terminal:
-            let name = provider.rawValue.capitalized
+            let name: String = switch provider {
+            case .opencode: "OpenCode"
+            case .commandcode: "Command Code"
+            default: provider.rawValue.capitalized
+            }
             if signIn.runInTerminal(signingInTo: name) {
                 setupModel.startConnecting(provider)
             } else {
@@ -1153,7 +1214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             (viewModel.showKimi && viewModel.hasKimiCredentials) ||
             (viewModel.showZai && viewModel.hasZaiCredentials) ||
             (viewModel.showDeepSeek && viewModel.hasDeepSeekCredentials) ||
-            (viewModel.showQwen && viewModel.hasQwenCredentials)
+            (viewModel.showQwen && viewModel.hasQwenCredentials) ||
+            (viewModel.showOpenCode && viewModel.hasOpenCodeCredentials) ||
+            (viewModel.showCommandCode && viewModel.hasCommandCodeCredentials)
         if !anyShown {
             viewModel[keyPath: keyPath] = true
         }
@@ -1198,6 +1261,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func toggleShowQwen() {
         viewModel.showQwen.toggle()
         ensureAProviderRemainsShown(fallback: \.showQwen)
+        NotificationCenter.default.post(name: NSNotification.Name("SettingsChanged"), object: nil)
+    }
+
+    @objc private func toggleShowOpenCode() {
+        viewModel.showOpenCode.toggle()
+        ensureAProviderRemainsShown(fallback: \.showOpenCode)
+        NotificationCenter.default.post(name: NSNotification.Name("SettingsChanged"), object: nil)
+    }
+
+    @objc private func toggleShowCommandCode() {
+        viewModel.showCommandCode.toggle()
+        ensureAProviderRemainsShown(fallback: \.showCommandCode)
         NotificationCenter.default.post(name: NSNotification.Name("SettingsChanged"), object: nil)
     }
 
@@ -1737,6 +1812,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return viewModel.hasDeepSeekCredentials
         case .qwen:
             return viewModel.hasQwenCredentials
+        case .opencode:
+            return viewModel.hasOpenCodeCredentials
+        case .commandcode:
+            return viewModel.hasCommandCodeCredentials
         }
     }
 
@@ -1756,6 +1835,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return viewModel.showDeepSeek
         case .qwen:
             return viewModel.showQwen
+        case .opencode:
+            return viewModel.showOpenCode
+        case .commandcode:
+            return viewModel.showCommandCode
         }
     }
 
@@ -1931,6 +2014,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             primary = viewModel.qwenUsageData.longUsedPercent
             secondary = viewModel.qwenUsageData.fiveHourUsedPercent
             label = viewModel.qwenUsageData.longLabel
+        case .opencode:
+            primary = Int(viewModel.opencodeUsageData.weeklyUsedPercent.rounded())
+            secondary = Int(viewModel.opencodeUsageData.rollingUsedPercent.rounded())
+            label = "7d"
+        case .commandcode:
+            primary = Int(viewModel.commandCodeUsageData.weeklyUsedPercent.rounded())
+            secondary = Int(viewModel.commandCodeUsageData.fiveHourUsedPercent.rounded())
+            label = "7d"
         }
         return StatusRenderKey(
             provider: currentProvider, primary: primary, secondary: secondary, windowLabel: label,
@@ -1968,6 +2059,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return createDeepSeekImage()
         case .qwen:
             return createQwenImage()
+        case .opencode:
+            return createOpenCodeImage()
+        case .commandcode:
+            return createCommandCodeImage()
         }
     }
 
@@ -1978,6 +2073,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         case kimi
         case zai
         case qwen
+        case opencode
+        case commandcode
     }
 
     /// Compact status image for the single-percentage providers: brand glyph +
@@ -2006,7 +2103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // bar theme instead of using the accent color.
             let glyphColor: NSColor = switch glyph {
             case .cursor, .zai: isDarkMode ? NSColor.white : NSColor(white: 0.1, alpha: 1.0)
-            case .kimi, .qwen: brandColor
+            case .kimi, .qwen, .opencode, .commandcode: brandColor
             }
             if glyph == .cursor {
                 drawCursorPlanMarks(centerX: width / 2, y: 12.5, height: 8, color: glyphColor)
@@ -2254,6 +2351,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             path.fill()
         case .qwen:
             qwenMarkPath(in: rect).fill()
+        case .opencode:
+            // A rounded chip, after OpenCode's terminal tile.
+            NSBezierPath(
+                roundedRect: rect.insetBy(dx: 0.4, dy: 0.4),
+                xRadius: rect.height * 0.32,
+                yRadius: rect.height * 0.32
+            ).fill()
+        case .commandcode:
+            // A ring with a hole, after a command key.
+            let path = NSBezierPath(ovalIn: rect)
+            path.windingRule = .evenOdd
+            let inset = rect.height / 4.5
+            path.append(NSBezierPath(ovalIn: rect.insetBy(dx: inset, dy: inset)))
+            path.fill()
         }
     }
 
@@ -2323,6 +2434,167 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             valuesString.append(NSAttributedString(string: qwen.longIsMonthly ? "M " : "W ", attributes: tinyLabelAttributes))
             valuesString.append(usageValueString(long, color: color))
         }
+        valuesString.draw(at: NSPoint(x: (width - valuesString.size().width) / 2, y: yOffset))
+
+        if availableUpdateVersion != nil {
+            brandClaudeColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: width - 5, y: height - 5, width: 4, height: 4)).fill()
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return (image, width)
+    }
+
+    // MARK: - OpenCode Image
+
+    /// The rolling window beside the weekly one, like Kimi. OpenCode Go also
+    /// reports a monthly window, which only the panel card shows.
+    private func createOpenCodeImage() -> (NSImage, CGFloat) {
+        let showIcon = viewModel.showIcon
+        let opencode = viewModel.opencodeUsageData
+        let fiveHour = Int(opencode.rollingUsedPercent.rounded())
+        let weekly = Int(opencode.weeklyUsedPercent.rounded())
+        let showOnly5hr = viewModel.showOnly5hr
+        let showOnlyWeekly = viewModel.showOnlyWeekly
+        let width: CGFloat = showOnly5hr || showOnlyWeekly ? 50 : 80
+        let height: CGFloat = showIcon ? 22 : 16
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        let isDarkMode = getDarkMode()
+        let textColor = isDarkMode ? NSColor.white : NSColor(white: 0.25, alpha: 1.0)
+        let yOffset: CGFloat = showIcon ? 0 : 3
+
+        if showIcon {
+            let glyphSize: CGFloat = 7
+            let labelAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 7, weight: .semibold),
+                .foregroundColor: textColor
+            ]
+            let labelString = NSAttributedString(string: " OpenCode", attributes: labelAttributes)
+            let totalWidth = glyphSize + labelString.size().width
+            let startX = (width - totalWidth) / 2
+            drawGlyph(
+                .opencode,
+                in: NSRect(x: startX, y: 13, width: glyphSize, height: glyphSize),
+                color: brandOpenCodeColor
+            )
+            labelString.draw(at: NSPoint(x: startX + glyphSize, y: 12))
+        }
+
+        let fiveHourColor = usageHighlightColor(
+            percentage: fiveHour,
+            highThreshold: 90,
+            accentColor: brandOpenCodeColor,
+            fallback: textColor
+        )
+        let weeklyColor = usageHighlightColor(
+            percentage: weekly,
+            highThreshold: 80,
+            accentColor: brandOpenCodeColor,
+            fallback: textColor
+        )
+        let tinyLabelAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 6, weight: .regular),
+            .foregroundColor: textColor.withAlphaComponent(0.7)
+        ]
+        let valuesString = NSMutableAttributedString()
+
+        if !showOnlyWeekly {
+            valuesString.append(NSAttributedString(string: "5h ", attributes: tinyLabelAttributes))
+            valuesString.append(usageValueString(fiveHour, color: fiveHourColor))
+        }
+
+        if !showOnly5hr {
+            if !showOnlyWeekly {
+                valuesString.append(NSAttributedString(string: "  ", attributes: tinyLabelAttributes))
+            }
+            valuesString.append(NSAttributedString(string: "W ", attributes: tinyLabelAttributes))
+            valuesString.append(usageValueString(weekly, color: weeklyColor))
+        }
+
+        valuesString.draw(at: NSPoint(x: (width - valuesString.size().width) / 2, y: yOffset))
+
+        if availableUpdateVersion != nil {
+            brandClaudeColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: width - 5, y: height - 5, width: 4, height: 4)).fill()
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return (image, width)
+    }
+
+    // MARK: - Command Code Image
+
+    /// The five-hour window beside the weekly one, like Kimi.
+    private func createCommandCodeImage() -> (NSImage, CGFloat) {
+        let showIcon = viewModel.showIcon
+        let commandCode = viewModel.commandCodeUsageData
+        let fiveHour = Int(commandCode.fiveHourUsedPercent.rounded())
+        let weekly = Int(commandCode.weeklyUsedPercent.rounded())
+        let showOnly5hr = viewModel.showOnly5hr
+        let showOnlyWeekly = viewModel.showOnlyWeekly
+        let width: CGFloat = showOnly5hr || showOnlyWeekly ? 50 : 80
+        let height: CGFloat = showIcon ? 22 : 16
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        let isDarkMode = getDarkMode()
+        let textColor = isDarkMode ? NSColor.white : NSColor(white: 0.25, alpha: 1.0)
+        let yOffset: CGFloat = showIcon ? 0 : 3
+
+        if showIcon {
+            let glyphSize: CGFloat = 7
+            let labelAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 7, weight: .semibold),
+                .foregroundColor: textColor
+            ]
+            let labelString = NSAttributedString(string: " Command Code", attributes: labelAttributes)
+            let totalWidth = glyphSize + labelString.size().width
+            let startX = (width - totalWidth) / 2
+            drawGlyph(
+                .commandcode,
+                in: NSRect(x: startX, y: 13, width: glyphSize, height: glyphSize),
+                color: brandCommandCodeColor
+            )
+            labelString.draw(at: NSPoint(x: startX + glyphSize, y: 12))
+        }
+
+        let fiveHourColor = usageHighlightColor(
+            percentage: fiveHour,
+            highThreshold: 90,
+            accentColor: brandCommandCodeColor,
+            fallback: textColor
+        )
+        let weeklyColor = usageHighlightColor(
+            percentage: weekly,
+            highThreshold: 80,
+            accentColor: brandCommandCodeColor,
+            fallback: textColor
+        )
+        let tinyLabelAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 6, weight: .regular),
+            .foregroundColor: textColor.withAlphaComponent(0.7)
+        ]
+        let valuesString = NSMutableAttributedString()
+
+        if !showOnlyWeekly {
+            valuesString.append(NSAttributedString(string: "5h ", attributes: tinyLabelAttributes))
+            valuesString.append(usageValueString(fiveHour, color: fiveHourColor))
+        }
+
+        if !showOnly5hr {
+            if !showOnlyWeekly {
+                valuesString.append(NSAttributedString(string: "  ", attributes: tinyLabelAttributes))
+            }
+            valuesString.append(NSAttributedString(string: "W ", attributes: tinyLabelAttributes))
+            valuesString.append(usageValueString(weekly, color: weeklyColor))
+        }
+
         valuesString.draw(at: NSPoint(x: (width - valuesString.size().width) / 2, y: yOffset))
 
         if availableUpdateVersion != nil {
@@ -2711,6 +2983,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private var brandDeepSeekColor: NSColor {
         NSColor(red: 0.302, green: 0.42, blue: 0.996, alpha: 1.0)
+    }
+
+    private var brandOpenCodeColor: NSColor {
+        NSColor(red: 0.486, green: 0.361, blue: 1.0, alpha: 1.0)
+    }
+
+    private var brandCommandCodeColor: NSColor {
+        NSColor(red: 0.078, green: 0.722, blue: 0.651, alpha: 1.0)
     }
 
     private func usageHighlightColor(

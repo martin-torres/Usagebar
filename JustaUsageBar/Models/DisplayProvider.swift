@@ -8,7 +8,9 @@ nonisolated enum DisplayProvider: String, CaseIterable, Sendable {
     case zai
     case deepseek
     case qwen
+    case opencode
+    case commandcode
 
     /// Fixed left-to-right order used for cycling and menu layout.
-    static let displayOrder: [DisplayProvider] = [.claude, .codex, .cursor, .kimi, .zai, .deepseek, .qwen]
+    static let displayOrder: [DisplayProvider] = [.claude, .codex, .cursor, .kimi, .zai, .deepseek, .qwen, .opencode, .commandcode]
 }

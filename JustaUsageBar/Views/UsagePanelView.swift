@@ -286,6 +286,20 @@ struct ProviderMark: View {
                     .foregroundStyle(Color(red: 0.38, green: 0.36, blue: 0.93))
                 Text("Qwen").fontWeight(.semibold)
             }
+        case .opencode:
+            HStack(spacing: 5) {
+                Image(systemName: "app.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.486, green: 0.361, blue: 1.0))
+                Text("OpenCode").fontWeight(.semibold)
+            }
+        case .commandcode:
+            HStack(spacing: 5) {
+                Image(systemName: "record.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.078, green: 0.722, blue: 0.651))
+                Text("Command Code").fontWeight(.semibold)
+            }
         }
     }
 

@@ -74,6 +74,8 @@ nonisolated func isRequestCancelled(_ error: Error) -> Bool {
     func clearDeepSeekAPIKey() {}
     func setZaiAPIKey(_ value: String) {}
     func clearZaiAPIKey() {}
+    func setCommandCodeAPIKey(_ value: String) {}
+    func clearCommandCodeAPIKey() {}
     var qwenCookie: String?
 }
 
@@ -157,5 +159,29 @@ nonisolated struct DeepSeekUsageData { var testValue = 0; static let placeholder
     func fetchUsage() async throws -> DeepSeekUsageData {
         let value = try await FakeProviders.fetch(.deepseek)
         return DeepSeekUsageData(testValue: value)
+    }
+}
+
+nonisolated struct OpenCodeUsageData { var testValue = 0; static let placeholder = OpenCodeUsageData() }
+
+@ProviderActor final class OpenCodeAPIService {
+    static let shared = OpenCodeAPIService()
+    var hasCredentials: Bool { FakeProviders.probe(.opencode) }
+    func clearCache() {}
+    func fetchUsage() async throws -> OpenCodeUsageData {
+        let value = try await FakeProviders.fetch(.opencode)
+        return OpenCodeUsageData(testValue: value)
+    }
+}
+
+nonisolated struct CommandCodeUsageData { var testValue = 0; static let placeholder = CommandCodeUsageData() }
+
+@ProviderActor final class CommandCodeAPIService {
+    static let shared = CommandCodeAPIService()
+    var hasCredentials: Bool { FakeProviders.probe(.commandcode) }
+    func clearCache() {}
+    func fetchUsage() async throws -> CommandCodeUsageData {
+        let value = try await FakeProviders.fetch(.commandcode)
+        return CommandCodeUsageData(testValue: value)
     }
 }

@@ -45,8 +45,10 @@ flowchart LR
 | `QwenAPIService` | Reads QwenCloud Token Plan usage (5-hour, weekly, and monthly windows) through the QwenCloud console's gateway, with the console session saved by `QwenAuthView`. Token Plan API keys cannot read their own quota. |
 | `QwenAuthView` | Signs in to the QwenCloud console in a non-persistent web view and hands back its `qwencloud.com` Cookie header. |
 | `DeepSeekAPIService` | Discovers a DeepSeek API key or DeepSeek Harness's account sign-in and normalizes the prepaid balance. |
+| `OpenCodeAPIService` | Discovers an OpenCode Go API key from the environment, OpenCode's config, its credential database, or OpenCode 1's auth.json, and normalizes the rolling, weekly, and monthly windows. OpenCode owns every sign-in; tokens are read and never refreshed. |
+| `CommandCodeAPIService` | Reads Command Code's CLI `apiKey`, a `CMD_API_KEY` environment variable, or a key saved in Usagebar, resolves the account's org, and normalizes the five-hour and weekly windows plus the prepaid credits left. |
 | `KeychainTool` | Reads a Keychain secret through `/usr/bin/security` without holding up other work when that tool has to ask. |
-| `CredentialStorage` | Encrypts Usagebar-managed Claude browser-session data and optional Kimi, z.ai, DeepSeek, and QwenCloud credentials locally. |
+| `CredentialStorage` | Encrypts Usagebar-managed Claude browser-session data and optional Kimi, z.ai, DeepSeek, Command Code, and QwenCloud credentials locally. |
 
 ## Runtime data flow
 
@@ -106,6 +108,8 @@ DeepSeek priority is: an API key saved in Usagebar, `DEEPSEEK_API_KEY` from the 
 | DeepSeek balance with a Harness sign-in | `https://platform.deepseek.com/api/v0/users/get_user_summary` |
 | Update discovery | `https://api.github.com/repos/betoxf/Usagebar/releases/latest` |
 | z.ai quota | `https://api.z.ai/api/monitor/usage/quota/limit` |
+| OpenCode Go usage | `https://opencode.ai/zen/go/v1/usage` |
+| Command Code identity and usage | `https://api.commandcode.ai/alpha/whoami?limits=1`, `https://api.commandcode.ai/alpha/billing/credits` |
 | QwenCloud sign-in and console page (session token) | `https://home.qwencloud.com/analytics/token-plan?region=ap-southeast-1`, `https://home.qwencloud.com/tool/user/info.json` |
 | QwenCloud Token Plan usage and plan | `https://cs-data.qwencloud.com/data/api.json` (private console gateway) |
 

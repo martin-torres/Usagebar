@@ -22,6 +22,8 @@ final class CredentialStorage {
         var kimiCredential: String?
         var deepseekAPIKey: String?
         var zaiAPIKey: String?
+        /// A Command Code API key pasted in Usagebar, used when the CLI has none.
+        var commandCodeAPIKey: String?
         /// The QwenCloud console's Cookie header, from Usagebar's sign-in window.
         var qwenCookie: String?
     }
@@ -112,6 +114,17 @@ final class CredentialStorage {
         }
     }
 
+    var commandCodeAPIKey: String? {
+        get { cachedCredentials?.commandCodeAPIKey }
+        set {
+            if cachedCredentials == nil {
+                cachedCredentials = Credentials()
+            }
+            cachedCredentials?.commandCodeAPIKey = newValue
+            removeEmptyCredentialFileOrSave()
+        }
+    }
+
     var qwenCookie: String? {
         get { cachedCredentials?.qwenCookie }
         set {
@@ -140,6 +153,16 @@ final class CredentialStorage {
 
     func setZaiAPIKey(_ value: String) {
         zaiAPIKey = value
+    }
+
+    func setCommandCodeAPIKey(_ value: String) {
+        commandCodeAPIKey = value
+    }
+
+    func clearCommandCodeAPIKey() {
+        guard cachedCredentials != nil else { return }
+        cachedCredentials?.commandCodeAPIKey = nil
+        removeEmptyCredentialFileOrSave()
     }
 
     func clearClaudeCredentials() {
@@ -185,6 +208,7 @@ final class CredentialStorage {
             cachedCredentials?.kimiCredential == nil &&
             cachedCredentials?.deepseekAPIKey == nil &&
             cachedCredentials?.zaiAPIKey == nil &&
+            cachedCredentials?.commandCodeAPIKey == nil &&
             cachedCredentials?.qwenCookie == nil
         if isEmpty {
             cachedCredentials = nil

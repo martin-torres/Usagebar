@@ -65,6 +65,8 @@ extension AppDelegate {
         verifyCursorOutage()
         verifyDeepSeek()
         verifyQwen()
+        verifyOpenCode()
+        verifyCommandCode()
 
         viewModel.useRenderingFixtures([.claude, .codex])
         let sheet = NSImage(size: NSSize(width: 560, height: 240))
@@ -186,6 +188,72 @@ extension AppDelegate {
             executable: "/usr/local/bin/claude", arguments: ["claude"],
             baseURL: "https://token-plan.maas.qwencloudapi.com/apps/anthropic/v1"
         ) == .qwen, "Claude Code on the Qwen gateway not attributed to Qwen")
+    }
+
+    private func verifyOpenCode() {
+        // The Go API reports used percentages and offset-qualified ISO resets.
+        let full = try! OpenCodeAPIService.parseUsageResponse(Data(#"""
+        {"usage":{"rolling":{"status":"ok","percent":42.5,"resetsAt":"2026-11-16T20:54:46.625Z"},
+        "weekly":{"status":"ok","percent":7,"resetsAt":"2026-11-23T00:00:00.000Z"},
+        "monthly":{"status":"ok","percent":99,"resetsAt":"2026-11-22T16:40:50.000Z"}}}
+        """#.utf8))
+        precondition(full.rollingUsedPercent == 42.5 && full.weeklyUsedPercent == 7, "OpenCode usage misread")
+        precondition(full.hasMonthly == true && full.monthlyUsedPercent == 99, "OpenCode monthly misread")
+        precondition(full.rollingResetAt == ISO8601Timestamp.date(from: "2026-11-16T20:54:46.625Z"),
+                     "OpenCode rolling reset misread")
+        precondition(full.weeklyResetAt == ISO8601Timestamp.date(from: "2026-11-23T00:00:00.000Z"),
+                     "OpenCode weekly reset misread")
+
+        let limited = try! OpenCodeAPIService.parseUsageResponse(
+            Data(#"{"usage":{"rolling":{"status":"rate-limited","percent":0,"resetsAt":"2026-11-16T20:54:46+02:00"}}}"#.utf8)
+        )
+        precondition(limited.rollingUsedPercent == 100, "A rate-limited OpenCode window did not read as exhausted")
+        precondition(limited.rollingResetAt != nil, "OpenCode offset timestamp not parsed")
+
+        precondition(OpenCodeAPIService.normalizeWindow([:]).usedPercent == 0, "A missing OpenCode window did not read as unused")
+
+        // The config reader tolerates JSONC: comments, trailing commas, and
+        // `//` inside strings.
+        let jsonc = #"""
+        {"provider": { // Go key first
+            "opencode-go": {"options": {"apiKey": "https://x.example//not-a-comment"}},
+        },}
+        """#
+        let parsed = try! JSONSerialization.jsonObject(
+            with: OpenCodeAPIService.sanitizedJSONC(Data(jsonc.utf8))
+        ) as? [String: Any]
+        let key = parsed?["provider"].flatMap { $0 as? [String: Any] }?["opencode-go"]
+            .flatMap { $0 as? [String: Any] }?["options"].flatMap { $0 as? [String: Any] }?["apiKey"]
+        precondition(key as? String == "https://x.example//not-a-comment", "JSONC sanitizing broke a string or key")
+        precondition(TerminalAgentDetector.provider(executable: "/usr/local/bin/opencode", arguments: ["opencode"], baseURL: nil) == .opencode,
+                     "OpenCode CLI not attributed to OpenCode")
+    }
+
+    private func verifyCommandCode() {
+        // billing/credits: cap and used in credits, resets in epoch milliseconds.
+        let full = try! CommandCodeAPIService.parseCreditsResponse(Data(#"""
+        {"credits":{"belowThreshold":false,"creditThreshold":0,"monthlyCredits":7.327,"purchasedCredits":0,"freeCredits":0},
+         "windowLimits":{"limited":true,"exceeded":null,
+           "fiveHour":{"used":0.1526300764,"cap":3,"exceeded":false,"resetAt":1794860971032},
+           "weekly":{"used":1.5,"cap":6,"exceeded":false,"resetAt":1795447771032}}}
+        """#.utf8))
+        precondition(full.fiveHourUsedPercent == 0.1526300764 / 3 * 100, "Command Code five-hour usage misread")
+        precondition(full.weeklyUsedPercent == 25, "Command Code weekly usage misread")
+        precondition(full.fiveHourResetAt == Date(timeIntervalSince1970: 1_794_860_971.032), "Command Code epoch-milli reset misread")
+        precondition(full.creditsRemaining == 7.327, "Command Code credits misread")
+        precondition(full.hasFiveHour && full.hasWeekly, "Command Code windows missing")
+
+        // A window without a cap has no row; zero resets and an integer cap parse.
+        let sparse = try! CommandCodeAPIService.parseCreditsResponse(
+            Data(#"{"windowLimits":{"fiveHour":{"used":0,"cap":0},"weekly":{"used":1,"cap":4,"resetAt":null}}}"#.utf8)
+        )
+        precondition(!sparse.hasFiveHour, "A capless Command Code window was shown")
+        precondition(sparse.weeklyUsedPercent == 25, "Command Code integer cap misread")
+        precondition(sparse.weeklyResetAt == nil, "A null Command Code reset did not read as absent")
+        precondition(CommandCodeAPIService.number("7") == nil, "A string read as a number")
+
+        precondition(TerminalAgentDetector.provider(executable: "/usr/local/bin/cmd", arguments: ["cmd"], baseURL: nil) == .commandcode,
+                     "Command Code CLI not attributed to Command Code")
     }
 
     private func verifyDeepSeek() {
